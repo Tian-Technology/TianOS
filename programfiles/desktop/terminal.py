@@ -1,0 +1,5 @@
+"""TianOS 桌面快捷方式：终端"""
+SHORTCUT_NAME = "终端"
+APP_ICON = ">_"
+APP_COLOR = "#00ff66"
+TARGET = "terminal"

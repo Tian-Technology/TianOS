@@ -1,0 +1,5 @@
+"""TianOS 桌面快捷方式：应用安装器"""
+SHORTCUT_NAME = "应用安装器"
+APP_ICON = "🧰"
+APP_COLOR = "#00e5a0"
+TARGET = "app_manager"

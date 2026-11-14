@@ -1,0 +1,5 @@
+"""TianOS 桌面快捷方式：Tian浏览器"""
+SHORTCUT_NAME = "Tian浏览器"
+APP_ICON = "🌍"
+APP_COLOR = "#00ccff"
+TARGET = "browser"

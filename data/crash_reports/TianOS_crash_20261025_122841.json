@@ -1,0 +1,15 @@
+{
+  "system": {
+    "name": "TianOS Constar",
+    "version": "tianos_constar_3.0.4_20261004_t4y3",
+    "build": "2026-10-04"
+  },
+  "diagnosis": {
+    "stop_code": "SYSTEM_THREAD_EXCEPTION_NOT_HANDLED",
+    "cause": "系统在「运行过程」中发生致命错误。\n错误信息: 'NoneType' object has no attribute 'file_path'\n\nTraceback (most recent call last):\n  File \"d:\\Python脚本\\TianOS\\gui\\desktop.py\", line 1337, in _handle_context_action\n    if not sc.file_path or not os.path.exists(sc.file_path):\n           ^^^^^^^^^^^^\nAttributeError: 'NoneType' object has no attribute 'file_path'\n",
+    "phase": "运行过程",
+    "error_message": "'NoneType' object has no attribute 'file_path'",
+    "traceback": "Traceback (most recent call last):\n  File \"d:\\Python脚本\\TianOS\\gui\\desktop.py\", line 1337, in _handle_context_action\n    if not sc.file_path or not os.path.exists(sc.file_path):\n           ^^^^^^^^^^^^\nAttributeError: 'NoneType' object has no attribute 'file_path'\n"
+  },
+  "time": "2026-10-25 12:28:41"
+}

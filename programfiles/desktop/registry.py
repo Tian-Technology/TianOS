@@ -1,0 +1,5 @@
+"""TianOS 桌面快捷方式：注册表"""
+SHORTCUT_NAME = "注册表"
+APP_ICON = "🧾"
+APP_COLOR = "#00ff99"
+TARGET = "registry"

@@ -1,0 +1,129 @@
+{
+  "SYSTEM_NAME": "TianOS Constar",
+  "SYSTEM_VERSION": "tianos_constar_3.1.0_20251025_43u2",
+  "SYSTEM_BUILD": "2026-10-25",
+  "SYSTEM_ARCH": "x86_64 (模拟)",
+  "SYSTEM_AUTHOR": "TianOS Team",
+  "HARDWARE": {
+    "cpu": {
+      "model": "AMD 9950XtianOS",
+      "cores": 16,
+      "frequency_mhz": 5760,
+      "features": [
+        "sse2",
+        "sse3",
+        "ssse3",
+        "sse4_1",
+        "sse4_2",
+        "avx",
+        "avx2",
+        "avx512f",
+        "avx512bw"
+      ]
+    },
+    "gpu": {
+      "model": "NVIDIA GeForce 5090 tianOS",
+      "vram_mb": 32768,
+      "cuda_cores": 21760,
+      "core_clock_mhz": 2895,
+      "memory_clock_mhz": 2400
+    },
+    "memory": {
+      "type": "DDR5",
+      "total_mb": 32768,
+      "reserved_mb": 512,
+      "kernel_heap_mb": 2048
+    },
+    "storage": {
+      "disk_size_mb": 5120,
+      "block_size": 512,
+      "disk_label": "TianOS Disk"
+    },
+    "display": {
+      "width": 2560,
+      "height": 1440,
+      "bpp": 32,
+      "refresh_rate": 230,
+      "gpu_model": "NVIDIA GeForce 5090 tianOS"
+    },
+    "network": {
+      "nic_count": 1,
+      "nic_model": "TianOS-VNIC",
+      "mac_address": "00:1A:2B:3C:4D:5E",
+      "default_gateway": "10.0.2.2",
+      "dns_servers": [
+        "8.8.8.8",
+        "8.8.4.4"
+      ]
+    }
+  },
+  "BOOT": {
+    "boot_device": "hda",
+    "kernel_path": "/boot/kernel.bin",
+    "initrd_path": "/boot/initrd.img",
+    "boot_timeout_ms": 5000,
+    "enable_verbose": true,
+    "enable_efi": false,
+    "boot_menu_delay": 3,
+    "splash_time_s": 1.2,
+    "safe_mode": false
+  },
+  "NETWORK": {
+    "host_ip": "10.0.2.15",
+    "netmask": "255.255.255.0",
+    "gateway": "10.0.2.2",
+    "dns_primary": "8.8.8.8",
+    "dns_secondary": "8.8.4.4",
+    "mtu": 1500,
+    "tcp_window_size": 65535,
+    "enable_dhcp": true
+  },
+  "GUI": {
+    "desktop_width": 1280,
+    "desktop_height": 720,
+    "theme": "TianOS-Default",
+    "font_size": 14,
+    "font_family": "SimSun",
+    "wallpaper_color": "#1a1a2e",
+    "accent_color": "#00ccff",
+    "enable_animations": true,
+    "taskbar_height": 40,
+    "dock_enabled": true,
+    "transparency_effects": true
+  },
+  "SOUND": {
+    "volume": 80,
+    "muted": false,
+    "device": "TianOS 模拟声卡"
+  },
+  "PERSONALIZATION": {
+    "lock_screen_image": "",
+    "start_menu_style": "centered",
+    "show_task_labels": false
+  },
+  "ACCOUNTS": {
+    "username": "user",
+    "display_name": "用户",
+    "account_type": "管理员",
+    "home_dir": "/home/user"
+  },
+  "LOCALE": {
+    "timezone": "中国标准时间 (UTC+8)",
+    "language": "简体中文",
+    "auto_set_time": true
+  },
+  "FS": {
+    "root_device": "hda1",
+    "mount_point": "/",
+    "max_files": 4096,
+    "max_file_size_mb": 100,
+    "cache_size_mb": 64,
+    "enable_journal": true
+  },
+  "PROCESS": {
+    "max_processes": 256,
+    "max_threads_per_process": 64,
+    "quantum_ms": 20,
+    "stack_size_kb": 1024
+  }
+}

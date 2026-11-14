@@ -1,0 +1,106 @@
+{
+  "desktop": [
+    {
+      "action": "new",
+      "label": "新建",
+      "submenu": [
+        {
+          "action": "new_folder",
+          "label": "文件夹"
+        },
+        {
+          "action": "new_text",
+          "label": "文本文件"
+        }
+      ]
+    },
+    {
+      "action": "copy",
+      "label": "复制"
+    },
+    {
+      "action": "paste",
+      "label": "粘贴"
+    },
+    {
+      "separator": true
+    },
+    {
+      "action": "refresh",
+      "label": "刷新桌面"
+    },
+    {
+      "action": "settings",
+      "label": "显示设置"
+    },
+    {
+      "action": "terminal",
+      "label": "在终端中打开"
+    }
+  ],
+  "file": [
+    {
+      "action": "open",
+      "label": "打开"
+    },
+    {
+      "action": "edit",
+      "label": "编辑"
+    },
+    {
+      "separator": true
+    },
+    {
+      "action": "copy",
+      "label": "复制"
+    },
+    {
+      "action": "cut",
+      "label": "剪切"
+    },
+    {
+      "action": "rename",
+      "label": "重命名"
+    },
+    {
+      "action": "delete",
+      "label": "删除"
+    },
+    {
+      "separator": true
+    },
+    {
+      "action": "properties",
+      "label": "属性"
+    }
+  ],
+  "taskbar": [
+    {
+      "action": "run",
+      "label": "运行..."
+    },
+    {
+      "action": "terminal",
+      "label": "在终端中打开"
+    },
+    {
+      "action": "task_manager",
+      "label": "任务管理器"
+    },
+    {
+      "action": "system_info",
+      "label": "系统"
+    },
+    {
+      "separator": true
+    },
+    {
+      "action": "settings",
+      "label": "显示设置"
+    },
+    {
+      "action": "taskbar_settings",
+      "label": "任务栏设置"
+    }
+  ]
+}

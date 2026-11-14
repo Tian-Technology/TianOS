@@ -1,0 +1,5 @@
+"""TianOS 桌面快捷方式：Tian下载"""
+SHORTCUT_NAME = "Tian下载"
+APP_ICON = "⬇"
+APP_COLOR = "#00e5a0"
+TARGET = "downloader"

@@ -1,0 +1,5 @@
+"""TianOS 桌面快捷方式：应用商店"""
+SHORTCUT_NAME = "应用商店"
+APP_ICON = "🛒"
+APP_COLOR = "#ff9900"
+TARGET = "app_store"

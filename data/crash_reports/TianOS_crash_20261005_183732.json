@@ -1,0 +1,15 @@
+{
+  "system": {
+    "name": "TianOS Constar",
+    "version": "tianos_constar_3.0.4_20261004_t4y3",
+    "build": "2026-10-04"
+  },
+  "diagnosis": {
+    "stop_code": "KERNEL_INIT_FAILURE",
+    "cause": "内核初始化失败，系统核心组件无法正常加载。",
+    "phase": "内核启动",
+    "error_message": "内核初始化失败: module not found",
+    "traceback": "RuntimeError: 内核初始化失败: module not found\n"
+  },
+  "time": "2026-10-05 18:37:32"
+}

@@ -1,0 +1,5 @@
+"""TianOS 桌面快捷方式：文件管理器"""
+SHORTCUT_NAME = "文件管理器"
+APP_ICON = "📁"
+APP_COLOR = "#ffcc00"
+TARGET = "file_manager"

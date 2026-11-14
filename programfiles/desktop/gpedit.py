@@ -1,0 +1,5 @@
+"""TianOS 桌面快捷方式：组策略"""
+SHORTCUT_NAME = "组策略"
+APP_ICON = "🛡"
+APP_COLOR = "#00aaff"
+TARGET = "gpedit"

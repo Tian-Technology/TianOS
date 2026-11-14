@@ -1,0 +1,5 @@
+"""TianOS 桌面快捷方式：网络工具"""
+SHORTCUT_NAME = "网络工具"
+APP_ICON = "🌐"
+APP_COLOR = "#00ccff"
+TARGET = "network_tools"

@@ -1,0 +1,5 @@
+"""TianOS 桌面快捷方式：此电脑"""
+SHORTCUT_NAME = "此电脑"
+APP_ICON = "💻"
+APP_COLOR = "#00aaff"
+TARGET = "this_pc"

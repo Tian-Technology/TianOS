@@ -1,0 +1,5 @@
+"""TianOS 桌面快捷方式：设置"""
+SHORTCUT_NAME = "设置"
+APP_ICON = "⚙"
+APP_COLOR = "#ff9900"
+TARGET = "settings"

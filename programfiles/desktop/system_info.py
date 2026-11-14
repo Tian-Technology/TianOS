@@ -1,0 +1,5 @@
+"""TianOS 桌面快捷方式：系统信息"""
+SHORTCUT_NAME = "系统信息"
+APP_ICON = "ℹ"
+APP_COLOR = "#ff66cc"
+TARGET = "system_info"

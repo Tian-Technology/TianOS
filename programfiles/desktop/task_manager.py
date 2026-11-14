@@ -1,0 +1,5 @@
+"""TianOS 桌面快捷方式：任务管理器"""
+SHORTCUT_NAME = "任务管理器"
+APP_ICON = "⚡"
+APP_COLOR = "#ffcc00"
+TARGET = "task_manager"

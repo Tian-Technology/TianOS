@@ -1,0 +1,5 @@
+"""TianOS 桌面快捷方式：关于"""
+SHORTCUT_NAME = "关于"
+APP_ICON = "©"
+APP_COLOR = "#ffffff"
+TARGET = "about"
