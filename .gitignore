@@ -64,3 +64,11 @@ r.txt
 # 如果你有专门打包的文件夹可以在这里排除
 # dist/
 # build/
+# 用户数据和日志
+data/
+*.json
+*.log
+
+# 允许保留 update.json（如果你必须传它的话）
+!update.json
+!requirements.txt
