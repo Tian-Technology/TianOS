@@ -1,0 +1,6 @@
+"""TianOS 桌面快捷方式：硬件配置器"""
+SHORTCUT_NAME = "硬件配置器"
+APP_ICON = "🖥️"
+APP_COLOR = "#ff8800"
+TARGET = "hardware_builder"
+SHORTCUT_ICON_FILE = "imageres 095.png"
