@@ -20,7 +20,7 @@ import sys
 import json
 import time
 import traceback
-from typing import Dict, Optional, List, Tuple, Any
+from typing import Dict, Optional, List, Tuple, Any, Callable
 
 from system.config import sys_config, SETTINGS_FILE
 

@@ -34,6 +34,7 @@ from PyQt6.QtGui import (
 )
 
 from gui.run_dialog import RunDialog, resolve_run_command
+from gui.search_panel import SearchPanel
 
 # ---------------------------------------------------------------------------
 # 实时设置支持
@@ -1421,6 +1422,11 @@ class DesktopEnvironment(QMainWindow):
         self.run_dialog = RunDialog(self)
         self.run_dialog.set_launch_callback(self._run_command)
         
+        # 搜索面板（任务栏搜索按钮）
+        self.search_panel = SearchPanel(self)
+        self.search_panel.app_launch.connect(self._on_icon_clicked)
+        self.search_panel.web_launch.connect(self._open_web)
+        
         # 窗口管理
         self.open_windows: List[AppWindow] = []
         self.window_z_index = 0
@@ -1444,6 +1450,9 @@ class DesktopEnvironment(QMainWindow):
         
         # 连接开始按钮
         self.taskbar.start_button.clicked.connect(self._toggle_start_menu)
+
+        # 连接搜索按钮
+        self.taskbar.search_button.clicked.connect(self._toggle_search_panel)
 
         # 监听全局鼠标点击：点击菜单外部时关闭开始菜单
         QApplication.instance().installEventFilter(self)
@@ -1668,6 +1677,48 @@ class DesktopEnvironment(QMainWindow):
         cy = desktop_pos.y() + self.desktop.height() // 3
         self.run_dialog.show_at(cx, cy)
 
+    # ---------- 搜索面板 ----------
+
+    def _toggle_search_panel(self):
+        """切换搜索面板显隐（任务栏搜索按钮）"""
+        if self.search_panel.isVisible():
+            self.search_panel.hide()
+            return
+        self.start_menu.hide()
+        # 屏幕上方约 1/4 处水平居中
+        desktop_pos = self.mapToGlobal(self.desktop.pos())
+        cx = desktop_pos.x() + self.desktop.width() // 2
+        cy = desktop_pos.y() + self.desktop.height() // 4
+        self.search_panel.show_at(cx, cy)
+
+    def _open_web(self, url: str):
+        """在 Tian浏览器 中打开网址 / 执行网页搜索"""
+        try:
+            from apps import app_registry, resolve_shortcut
+            browser_title = "Tian浏览器"
+            sc = resolve_shortcut(browser_title)
+            target = sc.target if sc else "browser"
+
+            # 若 Tian浏览器 已打开，导航到新地址而非重复开窗
+            for win in list(self.open_windows):
+                content = getattr(win.widget, "content_widget", None)
+                if content is not None and hasattr(content, "navigate"):
+                    content.navigate(url)
+                    win.widget.show()
+                    win.widget.raise_()
+                    win.widget.activateWindow()
+                    return
+            # 未打开则新建浏览器窗口
+            widget = app_registry.launch(target) or app_registry.launch_by_name(browser_title)
+            if widget is None:
+                raise RuntimeError("无法启动 Tian浏览器")
+            widget.navigate(url)
+            self.open_application(widget, browser_title)
+        except Exception as e:
+            print(f"[搜索] 打开网页失败: {e}")
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(self, "搜索", f"无法打开网址：{url}\n（{e}）")
+
     def _init_desktop_icons(self):
         """从 programfiles/desktop 加载快捷方式与用户文件夹"""
         from apps import (load_desktop_shortcuts, load_desktop_folders,
@@ -1881,16 +1932,26 @@ class DesktopEnvironment(QMainWindow):
         self.showFullScreen()
 
     def eventFilter(self, obj, event):
-        """点击开始菜单外部区域时关闭开始菜单"""
-        if (event.type() == QEvent.Type.MouseButtonPress
-                and self.start_menu.isVisible()):
+        """点击开始菜单/搜索面板外部区域时将其关闭"""
+        if event.type() == QEvent.Type.MouseButtonPress:
             click_pos = event.globalPosition().toPoint()
-            menu_geo = self.start_menu.frameGeometry()
-            # 开始按钮所在区域（点击开始按钮由 _toggle_start_menu 处理，这里不拦截）
-            btn = self.taskbar.start_button
-            btn_rect = QRect(btn.mapToGlobal(btn.rect().topLeft()), btn.size())
-            if not menu_geo.contains(click_pos) and not btn_rect.contains(click_pos):
-                self.start_menu.hide()
+            # 搜索面板
+            if self.search_panel.isVisible():
+                panel_geo = self.search_panel.frameGeometry()
+                btn_rect = QRect(self.taskbar.search_button.mapToGlobal(
+                    self.taskbar.search_button.rect().topLeft()),
+                    self.taskbar.search_button.size())
+                if (not panel_geo.contains(click_pos)
+                        and not btn_rect.contains(click_pos)):
+                    self.search_panel.hide()
+            # 开始菜单
+            if self.start_menu.isVisible():
+                menu_geo = self.start_menu.frameGeometry()
+                # 开始按钮所在区域（点击开始按钮由 _toggle_start_menu 处理，这里不拦截）
+                btn = self.taskbar.start_button
+                btn_rect = QRect(btn.mapToGlobal(btn.rect().topLeft()), btn.size())
+                if not menu_geo.contains(click_pos) and not btn_rect.contains(click_pos):
+                    self.start_menu.hide()
         return super().eventFilter(obj, event)
 
     def _toggle_start_menu(self):

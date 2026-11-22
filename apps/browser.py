@@ -361,6 +361,13 @@ class Browser(QWidget):
         if url:
             self._navigate(url)
 
+    def navigate(self, url: str):
+        """公开导航接口（供搜索面板等外部调用），打开指定地址或执行网页搜索"""
+        self._navigate(url)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
     def _go_back(self):
         self.view.back()
 
