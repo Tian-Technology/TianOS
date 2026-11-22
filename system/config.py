@@ -51,7 +51,7 @@ class SystemConfig:
 
         # 系统基本信息
         self.SYSTEM_NAME = "TianOS Constar"
-        self.SYSTEM_VERSION = "tianos_constar_3.2.5_20261122_7i54"
+        self.SYSTEM_VERSION = "tianos_constar_4.0.0_20261122_6sh2"
         self.SYSTEM_BUILD = "2026-11-22"
         self.SYSTEM_ARCH = "x86_64 (模拟)"
         self.SYSTEM_AUTHOR = "TianOS Team"

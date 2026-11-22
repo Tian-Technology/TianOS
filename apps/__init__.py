@@ -197,6 +197,18 @@ class AppRegistry:
         """启动应用，返回窗口实例"""
         app_info = self.get_app(name)
         if app_info and app_info.widget_class:
+            # 沙箱硬件检查：应用资源需求超出当前硬件上限时触发蓝屏
+            try:
+                from system.sandbox import assert_application_resources
+                assert_application_resources(name)
+            except Exception as e:
+                print(f"[APPS] 启动 '{name}' 触发硬件限制: {e}")
+                try:
+                    from boot.bsod import handle_crash
+                    handle_crash(e, phase=f"启动应用 {app_info.name}")
+                except Exception as bsod_err:
+                    print(f"[APPS] 蓝屏处理失败: {bsod_err}")
+                return None
             try:
                 return app_info.widget_class()
             except Exception as e:

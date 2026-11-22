@@ -43,6 +43,8 @@ STOP_CODES: List[Tuple[str, str, str]] = [
      "图形界面初始化失败，桌面环境无法启动。"),
     ("内存", "MEMORY_MANAGEMENT",
      "内存管理异常，可能是内存布局配置损坏。"),
+    ("硬件资源", "HARDWARE_LIMIT_EXCEEDED",
+     "应用请求的硬件资源超过当前物理硬件上限，无法继续启动。"),
 ]
 
 DEFAULT_STOP_CODE = "SYSTEM_THREAD_EXCEPTION_NOT_HANDLED"
@@ -180,6 +182,26 @@ def diagnose_error(error: Exception, phase: str = "",
     combined = f"{phase} {str(error)}".lower()
     stop_code = DEFAULT_STOP_CODE
     cause = DEFAULT_CAUSE
+
+    # 硬件过载异常：专用停止代码 + 展示具体原因
+    try:
+        from system.sandbox import HardwareOverloadError
+        if isinstance(error, HardwareOverloadError):
+            stop_code = "HARDWARE_LIMIT_EXCEEDED"
+            cause = (
+                f"系统在「{phase or '应用启动'}」时检测到硬件资源超限。\n\n"
+                f"停止原因: {error}\n\n"
+                "提示：请调整应用资源需求，或通过硬件配置器更换更高配置的硬件后重新启动系统。"
+            )
+            return DiagnosticResult(
+                stop_code=stop_code,
+                cause=cause,
+                error=error,
+                phase=phase,
+                traceback_text=traceback_to_text(error) if include_traceback else "",
+            )
+    except ImportError:
+        pass
 
     for keyword, code, desc in STOP_CODES:
         if keyword.lower() in combined:

@@ -198,7 +198,7 @@ class HardwareBuilder(QWidget):
         layout.addWidget(title)
 
         tip = QLabel("在左侧双击硬件即可加入中间配置；右侧显示所选硬件详情。"
-                     "点击“保存配置”写入 data/active_hardware.json。")
+                     "点击“应用配置”写入 data/active_hardware.json。")
         tip.setStyleSheet("color: #556677; font-size: 11px;")
         layout.addWidget(tip)
 
@@ -264,7 +264,7 @@ class HardwareBuilder(QWidget):
         self.status.setStyleSheet("color: #556677; font-size: 11px;")
         bar.addWidget(self.status, 1)
 
-        self.btn_save = self._btn("保存配置")
+        self.btn_save = self._btn("应用配置")
         self.btn_refresh = self._btn("刷新")
         for b in (self.btn_save, self.btn_refresh):
             bar.addWidget(b)
@@ -392,9 +392,17 @@ class HardwareBuilder(QWidget):
             return
 
         if save_active_config(selection):
-            QMessageBox.information(self, "配置已保存",
-                                    "配置已保存，重启 TianOS 生效")
-            self.status.setText("配置已保存，重启 TianOS 生效")
+            # 刷新全局硬件管理器缓存，让任务管理器/关于界面/沙箱立即使用新配置
+            try:
+                from system.hardware_manager import hardware_manager
+                hardware_manager.reload()
+            except Exception:
+                pass
+            QMessageBox.information(
+                self, "配置已保存",
+                "配置已保存，重启 TianOS 后完全生效。\n"
+                "当前会话硬件信息已即时同步到任务管理器与关于界面。")
+            self.status.setText("配置已保存，重启生效")
         else:
             QMessageBox.critical(self, "保存失败",
                                  f"无法写入 {ACTIVE_HARDWARE_FILE}")

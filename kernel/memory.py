@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
-from system.config import sys_config
+from system.hardware_manager import hardware_manager
 
 
 class PageSize(Enum):
@@ -59,14 +59,16 @@ class MemoryManager:
 
     def __init__(self, total_mb: int = None):
         if total_mb is None:
-            total_mb = sys_config.HARDWARE["memory"]["total_mb"]
+            ram_info = hardware_manager.get_ram_info()
+            total_mb = int(ram_info.get("total_mb") or 16384)
         self.total_memory = total_mb * 1024 * 1024
         self.page_size = PageSize.SIZE_4K.value
         self.total_frames = self.total_memory // self.page_size
 
         # 必须在 _init_frame_table 之前初始化
         self.allocated_memory = 0
-        self.reserved_memory = sys_config.HARDWARE["memory"]["reserved_mb"] * 1024 * 1024
+        ram_info = hardware_manager.get_ram_info()
+        self.reserved_memory = int(ram_info.get("reserved_mb") or 512) * 1024 * 1024
 
         # 虚拟内存映射
         self.page_tables: Dict[int, List[PageTable]] = {}
@@ -177,4 +179,8 @@ class MemoryManager:
 
 
 # 全局内存管理器
-memory_manager = MemoryManager(total_mb=sys_config.HARDWARE["memory"]["total_mb"])
+# 内存总容量与保留量由全局硬件管理器动态决定（受硬件配置器选择影响）
+_ram_info = hardware_manager.get_ram_info()
+_KERNEL_TOTAL_MB = int(_ram_info.get("total_mb") or 16384)
+_KERNEL_RESERVED_MB = int(_ram_info.get("reserved_mb") or 512)
+memory_manager = MemoryManager(total_mb=_KERNEL_TOTAL_MB)

@@ -318,6 +318,21 @@ class TianOS:
         self.log("-" * 50)
         
         try:
+            # 阶段0: 全局硬件管理器
+            # 读取 data/active_hardware.json，动态加载硬件配置并同步到 sys_config.HARDWARE，
+            # 确保 BIOS 自检、内存管理器等底层组件使用同一套动态硬件。
+            from system.hardware_manager import hardware_manager
+            hardware_manager.reload()
+            _cpu = hardware_manager.get_cpu_info()
+            _ram = hardware_manager.get_ram_info()
+            self.log(
+                f"硬件管理器就绪: {_cpu.get('name') or _cpu.get('model', '默认CPU')}"
+                f" | {_ram.get('memory_type') or _ram.get('type', '默认内存')} "
+                f"{int(_ram.get('total_mb') or 0) // 1024}GB"
+            )
+            if not hardware_manager.is_active_config_present():
+                self.log("未检测到主动硬件配置 (active_hardware.json)，使用默认硬件参数", "WARN")
+
             # 阶段1: BIOS POST
             if not self.args.quick:
                 if not self.phase_1_bios_post(progress_callback):

@@ -14,9 +14,15 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
 
 from system.config import sys_config
+from system.hardware_manager import hardware_manager
 
 # 更新日志内容（新版本在上，按时间倒序）
 CHANGELOG = """\
+【2026-11-22】版本 4.0.0
+  · 新增：全局硬件管理器，硬件信息统一动态读取（见「系统硬件」标签页）
+  · 新增：应用沙箱硬件限制，应用资源超限触发蓝屏 (HARDWARE_LIMIT_EXCEEDED)
+  · 优化：任务管理器与关于界面随硬件配置变化实时更新
+
 【2026-11-22】版本 3.2.5
   · 新增：硬件配置器（扫描硬件/目录、兼容性检测、保存配置）
   · 新增：组策略编辑器支持策略勾选与注册表写入
@@ -120,6 +126,75 @@ class _ChangelogTab(QWidget):
         layout.addWidget(self.text)
 
 
+class _HardwareTab(QWidget):
+    """「系统硬件」标签页：动态展示当前硬件配置"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(8)
+
+        info = hardware_manager.get_all_info()
+        cpu = info["cpu"]
+        gpu = info["gpu"]
+        ram = info["ram"]
+        mobo = info["motherboard"]
+
+        items = []
+        items.append(("CPU", _hw_line(
+            cpu.get("name") or cpu.get("model") or "未知 CPU",
+            [f"核心数 {cpu.get('cores', '?')}",
+             f"线程数 {cpu.get('threads', '?')}",
+             f"{cpu.get('frequency_mhz', '?')} MHz",
+             _join(cpu.get('features'), " / ")])))
+        items.append(("内存 (RAM)", _hw_line(
+            f"{ram.get('type') or ram.get('memory_type', '?')}"
+            f"  {int((ram.get('total_mb') or 0) // 1024)} GB",
+            [f"容量 {ram.get('total_mb', '?')} MB",
+             f"频率 {ram.get('frequency_mhz', '?')} MHz",
+             f"插条 {ram.get('modules', '?')} 根"])))
+        items.append(("GPU", _hw_line(
+            gpu.get("name") or gpu.get("model") or "无独立显卡",
+            [f"显存 {int((gpu.get('vram_mb') or 0) // 1024)} GB",
+             f"{gpu.get('core_clock_mhz', '?')} MHz",
+             _join(gpu.get('features'))])))
+        items.append(("主板", _hw_line(
+            mobo.get("name") or mobo.get("model") or "未配置",
+            [f"{mobo.get('chipset', '')}".strip(),
+             f"支持内存 {_join(mobo.get('memory_types'), '/')}"])))
+
+        for name, text in items:
+            title = QLabel(f"<b style='color:#00ccff;'>{name}</b>")
+            title.setFont(QFont("Microsoft YaHei", 11))
+            layout.addWidget(title)
+            body = QLabel(text)
+            body.setFont(QFont("Consolas", 10))
+            body.setStyleSheet("color: #b7c4e0;")
+            body.setWordWrap(True)
+            layout.addWidget(body)
+
+        layout.addStretch()
+
+
+def _join(seq, sep=", "):
+    """把列表/元组/字符串安全转为展示文本"""
+    if seq is None:
+        return ""
+    if isinstance(seq, (list, tuple, set)):
+        seq = [s for s in seq if s]
+        return sep.join(str(s) for s in seq)
+    return str(seq)
+
+
+def _hw_line(name: str, details) -> str:
+    """把硬件行渲染为可读文本"""
+    info = f"<b style='color:#e8ecf8;'>{name}</b>"
+    if details:
+        info += "<br>" + "&nbsp;&nbsp;|&nbsp;&nbsp;".join(str(d) for d in details)
+    return info
+
+
 class About(QWidget):
     """关于 TianOS"""
 
@@ -161,5 +236,6 @@ class About(QWidget):
             }
         """)
         self.tabs.addTab(_InfoTab(self), "简介")
+        self.tabs.addTab(_HardwareTab(self), "系统硬件")
         self.tabs.addTab(_ChangelogTab(self), "更新日志")
         layout.addWidget(self.tabs)

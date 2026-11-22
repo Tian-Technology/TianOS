@@ -352,17 +352,19 @@ class PerformanceTab(QWidget):
         from kernel.kernel import kernel
         from kernel.memory import memory_manager
 
-        # CPU 信息
-        cpu_config = sys_config.HARDWARE["cpu"]
-        mem_config = sys_config.HARDWARE["memory"]
-        gpu_config = sys_config.HARDWARE.get("gpu", {})
-        gpu_name = gpu_config.get("model", "无")
+        # CPU 信息（动态读取硬件管理器）
+        from system.hardware_manager import hardware_manager
+        cpu_config = hardware_manager.get_cpu_info()
+        mem_config = hardware_manager.get_ram_info()
+        gpu_config = hardware_manager.get_gpu_info()
+        gpu_name = gpu_config.get("model") or gpu_config.get("name") or "无"
         self.cpu_info.setText(
-            f"模型: {cpu_config['model']}  |  "
-            f"核心数: {cpu_config['cores']}  |  "
-            f"频率: {cpu_config['frequency_mhz']} MHz  |  "
+            f"型号: {cpu_config.get('name') or cpu_config.get('model', '未知')}  |  "
+            f"核心数: {cpu_config.get('cores', '?')}  |  "
+            f"线程数: {cpu_config.get('threads', cpu_config.get('cores', '?'))}  |  "
+            f"频率: {cpu_config.get('frequency_mhz', '?')} MHz  |  "
             f"GPU: {gpu_name}  |  "
-            f"特性: {', '.join(cpu_config['features'][:4])}..."
+            f"特性: {', '.join((cpu_config.get('features') or [])[:4])}..."
         )
 
         # 模拟 CPU 占用率 (基于进程数量)
@@ -382,8 +384,8 @@ class PerformanceTab(QWidget):
         user_mb = mem_stats["user_mb"]
 
         self.mem_info.setText(
-            f"类型: {mem_config.get('type', 'DDR5')}  |  "
-            f"总计: {total_mb:.0f} MB  |  "
+            f"类型: {mem_config.get('type') or mem_config.get('memory_type', 'DDR5')}  |  "
+            f"物理容量: {mem_config.get('total_mb', total_mb):.0f} MB  |  "
             f"已用: {used_mb:.1f} MB  |  "
             f"空闲: {free_mb:.1f} MB  |  "
             f"页帧: {mem_stats['total_frames']} 帧"
@@ -485,17 +487,34 @@ class HardwareTab(QWidget):
         hw_title.setStyleSheet("color: #00ccff; background: transparent;")
         hw_layout.addWidget(hw_title)
 
+        from system.hardware_manager import hardware_manager
         hw_config = sys_config.HARDWARE
-        gpu = hw_config.get("gpu", {})
-        gpu_desc = f"{gpu.get('model', '无')}  {gpu.get('vram_mb', 0)//1024}GB VRAM" if gpu else "无"
-        mem_type = hw_config["memory"].get("type", "DDR5")
+        cpu = hardware_manager.get_cpu_info()
+        mem = hardware_manager.get_ram_info()
+        gpu = hardware_manager.get_gpu_info()
+        mobo = hardware_manager.get_motherboard_info()
+
+        # 设备清单（CPU/GPU/内存/主板来自硬件管理器，其余保留系统默认）
+        gpu_name = gpu.get("model") or gpu.get("name") or "无"
+        gpu_desc = f"{gpu_name}  {gpu.get('vram_mb', 0)//1024}GB VRAM" if gpu else "无"
+        mem_type = mem.get("type") or mem.get("memory_type", "DDR5")
+        mem_total = int(mem.get("total_mb") or hw_config['memory']['total_mb'])
+        mem_reserved = int(hw_config['memory'].get("reserved_mb", 512))
+        cpu_name = cpu.get("name") or cpu.get("model") or "未知"
+        cpu_cores = cpu.get("cores", "?")
+        cpu_freq = cpu.get("frequency_mhz", "?")
+        cpu_threads = cpu.get("threads", cpu_cores)
+        mobo_name = mobo.get("name") or mobo.get("model") or ""
+        mobo_types = "/".join(mobo.get("memory_types") or []) or "?"
         hw_items = [
-            ("CPU", f"{hw_config['cpu']['model']}  {hw_config['cpu']['cores']}核  {hw_config['cpu']['frequency_mhz']}MHz",
+            ("CPU", f"{cpu_name}  {cpu_cores}核{cpu_threads}线程  {cpu_freq}MHz",
              "#00ff66"),
-            ("内存", f"{mem_type}  {hw_config['memory']['total_mb']//1024}GB (保留{hw_config['memory']['reserved_mb']}MB)",
+            ("内存", f"{mem_type}  {mem_total//1024}GB (保留{mem_reserved}MB)",
              "#ffcc00"),
             ("显卡", gpu_desc,
              "#66ff99"),
+            ("主板", f"{mobo_name}  支持内存: {mobo_types}" if mobo_name else "未配置",
+             "#88ccff"),
             ("显示适配器", f"{hw_config['display']['gpu_model']}  {hw_config['display']['width']}x{hw_config['display']['height']}@{hw_config['display']['refresh_rate']}Hz",
              "#4488ff"),
             ("键盘", "PS/2 标准键盘 (US 布局)", "#aaaaaa"),
