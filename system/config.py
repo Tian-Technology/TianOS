@@ -15,6 +15,14 @@ from typing import Dict, Any, Optional
 _DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
 SETTINGS_FILE = os.path.normpath(os.path.join(_DATA_DIR, "settings.json"))
 
+# 系统元数据键：仅由代码定义（system/config.py），不参与持久化。
+# settings.json 中的同名键在保存时会被排除、加载时会被跳过，
+# 从而保证版本等系统信息始终以代码为准。
+SYSTEM_META_KEYS = frozenset({
+    "SYSTEM_NAME", "SYSTEM_VERSION", "SYSTEM_BUILD",
+    "SYSTEM_ARCH", "SYSTEM_AUTHOR",
+})
+
 
 def _deep_update(target: dict, source: dict) -> None:
     """递归地将 source 中的键更新到 target（仅覆盖已存在的键）"""
@@ -43,8 +51,8 @@ class SystemConfig:
 
         # 系统基本信息
         self.SYSTEM_NAME = "TianOS Constar"
-        self.SYSTEM_VERSION = "tianos_constar_3.1.0_20251025_43u2"
-        self.SYSTEM_BUILD = "2026-10-25"
+        self.SYSTEM_VERSION = "tianos_constar_3.2.5_20261122_7i54"
+        self.SYSTEM_BUILD = "2026-11-22"
         self.SYSTEM_ARCH = "x86_64 (模拟)"
         self.SYSTEM_AUTHOR = "TianOS Team"
 
@@ -176,6 +184,57 @@ class SystemConfig:
             "stack_size_kb": 1024
         }
 
+        # ------------------------------------------------------------------
+        # 应用/游戏/辅助功能/隐私/更新 设置（由设置应用写入并持久化）
+        # ------------------------------------------------------------------
+
+        self.APPS = {
+            "external_install": False,
+            "auto_update": True,
+            "show_recommendations": True,
+            "show_notifications": True,
+            "default_install_location": "C:\\Program Files\\TianOS",
+            "show_recent_apps": True,
+        }
+
+        self.GAMING = {
+            "game_mode": False,
+            "prioritize_foreground_fps": False,
+            "show_game_bar": True,
+            "capture_in_background": False,
+            "hdr": False,
+        }
+
+        self.ACCESSIBILITY = {
+            "magnifier": False,
+            "color_filters": "无",
+            "high_contrast": False,
+            "mono_audio": False,
+            "visual_notifications": True,
+            "sticky_keys": False,
+            "text_size": 100,
+        }
+
+        self.PRIVACY = {
+            "real_time_protection": True,
+            "cloud_sample_submission": True,
+            "location": True,
+            "camera": True,
+            "microphone": True,
+            "diagnostics": "仅必需诊断数据",
+            "advertising_id": False,
+            "activity_history": True,
+        }
+
+        self.UPDATE = {
+            "auto_update": True,
+            "include_drivers": True,
+            "preview_builds": False,
+            "delivery_optimization": True,
+            "download_bandwidth": 100,
+            "last_check": "刚刚",
+        }
+
         # 从本地文件加载已保存的设置（覆盖默认值）
         self._load_from_file()
 
@@ -210,10 +269,10 @@ class SystemConfig:
             self._save_to_file()
 
     def to_dict(self) -> Dict[str, Any]:
-        """导出配置为字典"""
+        """导出配置为字典（系统元数据如版本不参与持久化）"""
         result = {}
         for key, value in self.__dict__.items():
-            if not key.startswith("_"):
+            if not key.startswith("_") and key not in SYSTEM_META_KEYS:
                 result[key] = value
         return result
 
@@ -235,8 +294,18 @@ class SystemConfig:
         """内部方法：保存到默认设置文件"""
         self.save(SETTINGS_FILE)
 
+    def save_to_disk(self, path: str = None):
+        """把当前所有配置立即写入本地 JSON 文件（默认写入 data/settings.json）。
+        与 save() 等价，专门供设置应用在控件变更后显式调用，
+        确保用户改完设置立刻落盘。
+        """
+        self.save(path or SETTINGS_FILE)
+
     def _load_from_file(self):
-        """从默认设置文件加载配置，与默认值深度合并"""
+        """从默认设置文件加载配置，与默认值深度合并。
+
+        系统元数据（版本等）始终以代码定义为准，不读取文件中的值。
+        """
         path = SETTINGS_FILE
         if not os.path.exists(path):
             return
@@ -248,6 +317,8 @@ class SystemConfig:
             return
 
         for key, value in data.items():
+            if key in SYSTEM_META_KEYS:
+                continue  # 版本等系统信息以 system/config.py 为准
             if not key.startswith("_") and hasattr(self, key):
                 current = getattr(self, key)
                 if isinstance(current, dict) and isinstance(value, dict):
@@ -257,12 +328,14 @@ class SystemConfig:
 
     @classmethod
     def load(cls, path: str) -> "SystemConfig":
-        """从文件加载配置"""
+        """从文件加载配置（系统元数据如版本以代码定义为准）"""
         config = cls()
         if os.path.exists(path):
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             for key, value in data.items():
+                if key in SYSTEM_META_KEYS:
+                    continue
                 if hasattr(config, key):
                     current = getattr(config, key)
                     if isinstance(current, dict) and isinstance(value, dict):

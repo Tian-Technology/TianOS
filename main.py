@@ -338,6 +338,15 @@ class TianOS:
             # 阶段5: 系统服务
             if not self.phase_5_services(progress_callback):
                 raise RuntimeError("服务启动失败")
+
+            # 应用注册表: 把所有已安装应用写入 HKEY_CURRENT_USER\Software\TianOS\Apps
+            if not self.args.quick:
+                try:
+                    from apps.registry import register_all_apps_on_boot
+                    count = register_all_apps_on_boot()
+                    self.log(f"应用注册表已更新: {count} 个应用")
+                except Exception as e:
+                    self.log(f"应用注册失败(非致命): {e}", "WARN")
             
             # 阶段6: GUI
             if not self.phase_6_gui(progress_callback):

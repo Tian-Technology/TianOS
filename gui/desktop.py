@@ -35,6 +35,112 @@ from PyQt6.QtGui import (
 
 from gui.run_dialog import RunDialog, resolve_run_command
 
+# ---------------------------------------------------------------------------
+# 实时设置支持
+# 系统设置应用通过 get_active_desktop() 获取桌面环境引用，
+# 调用 settings_changed() 将配置实时应用到正在运行的界面。
+# ---------------------------------------------------------------------------
+
+_ACTIVE_DESKTOP: Optional['DesktopEnvironment'] = None
+
+
+def get_active_desktop():
+    """返回当前活动的桌面环境实例，未创建时返回 None"""
+    return _ACTIVE_DESKTOP
+
+
+def theme_palette(theme=None, accent_hex=None, wallpaper_hex=None,
+                  transparency=None) -> dict:
+    """根据配置解析一套配色，供桌面/任务栏/开始菜单/窗口框架统一使用。"""
+    from system.config import sys_config
+    theme = theme if theme is not None else \
+        sys_config.get("GUI.theme", "TianOS-Default")
+    accent_hex = accent_hex if accent_hex is not None else \
+        sys_config.get("GUI.accent_color", "#00ccff")
+    wallpaper_hex = wallpaper_hex if wallpaper_hex is not None else \
+        sys_config.get("GUI.wallpaper_color", "#1a1a2e")
+    if transparency is None:
+        transparency = bool(sys_config.get("GUI.transparency_effects", True))
+
+    accent = QColor(accent_hex)
+    if not accent.isValid():
+        accent = QColor("#00ccff")
+    wall = QColor(wallpaper_hex)
+    if not wall.isValid():
+        wall = QColor("#1a1a2e")
+
+    if theme in ("浅色", "Light", "light"):
+        wall_top = wall.lighter(190)
+        wall_mid = wall.lighter(160)
+        wall_bottom = wall.lighter(120)
+        text = QColor(20, 20, 24)
+        text_dim = QColor(70, 70, 80)
+        chrome_bg = QColor(222, 226, 234)
+        chrome_bg2 = QColor(238, 240, 246)
+        taskbar = QColor(240, 241, 246)
+        card_bg = QColor(250, 250, 253)
+        dash = QColor(120, 120, 140)
+        hover_rgba = "rgba(0, 0, 0, 12)"
+        hover_rgba_pressed = "rgba(0, 0, 0, 22)"
+        wave_alpha = 90
+    elif theme in ("高对比度", "HighContrast"):
+        wall_top = QColor(0, 0, 0)
+        wall_mid = QColor(0, 0, 0)
+        wall_bottom = QColor(10, 10, 12)
+        text = QColor(255, 255, 255)
+        text_dim = QColor(255, 255, 210)
+        chrome_bg = QColor(12, 12, 14)
+        chrome_bg2 = QColor(16, 16, 20)
+        taskbar = QColor(0, 0, 0)
+        card_bg = QColor(10, 10, 12)
+        dash = QColor(190, 190, 255)
+        hover_rgba = "rgba(255, 255, 255, 60)"
+        hover_rgba_pressed = "rgba(255, 255, 255, 90)"
+        wave_alpha = 255
+    else:  # 深色 / TianOS-Default
+        wall_top = wall.darker(130)
+        wall_mid = wall.darker(105)
+        wall_bottom = wall.darker(160)
+        text = QColor(255, 255, 255)
+        text_dim = QColor(180, 180, 190)
+        chrome_bg = QColor(20, 25, 50)
+        chrome_bg2 = QColor(26, 26, 46)
+        taskbar = QColor(30, 30, 40)
+        card_bg = QColor(31, 36, 48)
+        dash = QColor(51, 68, 102)
+        hover_rgba = "rgba(255, 255, 255, 15)"
+        hover_rgba_pressed = "rgba(255, 255, 255, 25)"
+        wave_alpha = 200
+
+    return {
+        "theme": theme,
+        "accent": accent,
+        "wall_top": wall_top,
+        "wall_mid": wall_mid,
+        "wall_bottom": wall_bottom,
+        "text": text,
+        "text_dim": text_dim,
+        "dash": dash,
+        "chrome_bg": chrome_bg,     # 窗口标题栏
+        "chrome_bg2": chrome_bg2,   # 窗口内容区
+        "taskbar": taskbar,
+        "taskbar_alpha": 200 if transparency else 255,
+        "card_bg": card_bg,
+        "hover_rgba": hover_rgba,
+        "hover_rgba_pressed": hover_rgba_pressed,
+        "wave_alpha": wave_alpha,
+        "transparency": bool(transparency),
+    }
+
+
+def _wave_color(base: QColor, lightness: int, alpha: int) -> QColor:
+    """根据基准色生成一种波浪颜色（保持色相/饱和度，调整亮度与透明度）"""
+    h = base.hue() if base.hue() >= 0 else 210
+    s = base.saturation() if base.saturation() >= 0 else 170
+    c = QColor()
+    c.setHsl(h, s, max(0, min(255, lightness)), max(0, min(255, alpha)))
+    return c
+
 
 @dataclass
 class DesktopIcon:
@@ -810,9 +916,14 @@ class AppWindowFrame(QWidget):
         
         # 动画相关
         self.taskbar_button = None          # 关联的任务栏按钮（用于动画原点）
-        self._open_anim: Optional[QParallelAnimationGroup] = None
-        self._close_anim: Optional[QParallelAnimationGroup] = None
+        self._anims: List[QParallelAnimationGroup] = []  # 正在运行的动画组
         self._anim_origin = QPoint()        # 动画缩放原点（任务栏位置）
+        # 最大化 / 最小化 状态
+        self.is_maximized = False           # 是否处于最大化状态
+        self._normal_geometry = QRect()     # 恢复正常时的几何位置
+        self._maximized_geo = QRect()       # 最大化区域缓存
+        self._minimize_target = QRect()     # 最小化动画目标（任务栏按钮位置）
+        self._minimized_from_max = False    # 最小化前是否处于最大化状态
         
         self._setup_ui()
 
@@ -823,12 +934,11 @@ class AppWindowFrame(QWidget):
         self._anim_origin = point
 
     def _stop_animations(self):
-        if self._open_anim and self._open_anim.state() == \
-                QParallelAnimationGroup.State.Running:
-            self._open_anim.stop()
-        if self._close_anim and self._close_anim.state() == \
-                QParallelAnimationGroup.State.Running:
-            self._close_anim.stop()
+        """停止所有正在运行的窗口动画"""
+        for anim in list(self._anims):
+            if anim.state() == QParallelAnimationGroup.State.Running:
+                anim.stop()
+        self._anims.clear()
 
     def play_open_animation(self, final_geometry: QRect):
         """Win11 风格打开动画：从下方(窗口底边)向上展开 + 淡入"""
@@ -857,7 +967,7 @@ class AppWindowFrame(QWidget):
         anims.addAnimation(geo)
         anims.addAnimation(op)
         anims.finished.connect(lambda: self.setWindowOpacity(1.0))
-        self._open_anim = anims
+        self._anims.append(anims)
         anims.start()
 
     def play_close_animation(self):
@@ -883,13 +993,160 @@ class AppWindowFrame(QWidget):
         anims.addAnimation(geo)
         anims.addAnimation(op)
         anims.finished.connect(self._finish_close)
-        self._close_anim = anims
+        self._anims.append(anims)
         anims.start()
 
     def _finish_close(self):
         self.setWindowOpacity(1.0)
         self.hide()
         self.closed.emit()
+
+    # ---------- 平滑 最大化 / 还原 / 最小化 动画 ----------
+
+    def _maximized_geometry(self) -> QRect:
+        """计算最大化区域：当前屏幕除去底部任务栏后的区域"""
+        screen = QApplication.screenAt(self.frameGeometry().center()) or \
+                 QApplication.primaryScreen()
+        geo = screen.geometry()
+        taskbar_h = 48  # 复用应用自带任务栏高度
+        return QRect(geo.x(), geo.y(), geo.width(), max(0, geo.height() - taskbar_h))
+
+    def _minimize_target_rect(self) -> QRect:
+        """计算最小化动画目标：任务栏按钮中心的小矩形"""
+        btn = self.taskbar_button
+        if btn is not None:
+            try:
+                c = btn.mapToGlobal(btn.rect().center())
+                return QRect(c.x() - 2, c.y() - 2, 4, 4)
+            except Exception:
+                pass
+        # 无关联按钮时：缩向当前窗口底边中心
+        g = self.frameGeometry()
+        return QRect(g.x() + g.width() // 2, g.bottom(), 1, 1)
+
+    def play_maximize_animation(self):
+        """平滑最大化：从当前位置向最大化区域放大"""
+        self._stop_animations()
+        start = self.frameGeometry()
+        self._normal_geometry = start       # 记住还原位置
+        self._maximized_geo = self._maximized_geometry()
+
+        anims = QParallelAnimationGroup(self)
+        geo = QPropertyAnimation(self, b"geometry")
+        geo.setDuration(260)
+        geo.setStartValue(start)
+        geo.setEndValue(self._maximized_geo)
+        geo.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        anims.addAnimation(geo)
+        anims.finished.connect(self._apply_maximized)
+        self._anims.append(anims)
+        anims.start()
+
+    def _apply_maximized(self):
+        self.setGeometry(self._maximized_geo)  # 精确落位，避免偏差
+        self.is_maximized = True
+
+    def play_restore_animation(self):
+        """平滑还原：从最大化区域缩回原先的正常位置"""
+        self._stop_animations()
+        if not self._normal_geometry.isValid():
+            self.is_maximized = False
+            return
+        start = self.frameGeometry()
+
+        anims = QParallelAnimationGroup(self)
+        geo = QPropertyAnimation(self, b"geometry")
+        geo.setDuration(260)
+        geo.setStartValue(start)
+        geo.setEndValue(self._normal_geometry)
+        geo.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        anims.addAnimation(geo)
+        anims.finished.connect(self._apply_restored)
+        self._anims.append(anims)
+        anims.start()
+
+    def _apply_restored(self):
+        self.setGeometry(self._normal_geometry)
+        self.is_maximized = False
+
+    def play_minimize_animation(self):
+        """平滑最小化：窗口缩小并飞向任务栏按钮 + 淡出，随后最小化"""
+        self._stop_animations()
+        if not self.is_maximized:
+            self._normal_geometry = self.frameGeometry()
+        self._minimized_from_max = self.is_maximized
+        self._minimize_target = self._minimize_target_rect()
+        start = self.frameGeometry()
+
+        anims = QParallelAnimationGroup(self)
+        geo = QPropertyAnimation(self, b"geometry")
+        geo.setDuration(220)
+        geo.setStartValue(start)
+        geo.setEndValue(self._minimize_target)
+        geo.setEasingCurve(QEasingCurve.Type.InCubic)
+
+        op = QPropertyAnimation(self, b"windowOpacity")
+        op.setDuration(220)
+        op.setStartValue(self.windowOpacity())
+        op.setEndValue(0.0)
+        op.setEasingCurve(QEasingCurve.Type.InCubic)
+
+        anims.addAnimation(geo)
+        anims.addAnimation(op)
+        anims.finished.connect(self._finish_minimize)
+        self._anims.append(anims)
+        anims.start()
+
+    def _finish_minimize(self):
+        self.setWindowOpacity(1.0)
+        self.showMinimized()
+
+    def play_restore_from_minimized_animation(self):
+        """从最小化恢复：从任务栏按钮位置展开到所在位置 + 淡入"""
+        self._stop_animations()
+        if self._minimized_from_max:
+            target = self._maximized_geo if self._maximized_geo.isValid() \
+                else self._maximized_geometry()
+        else:
+            target = self._normal_geometry if self._normal_geometry.isValid() \
+                else self.frameGeometry()
+        start = self._minimize_target if self._minimize_target.isValid() \
+            else self._minimize_target_rect()
+
+        # 先以不可见状态恢复显示（避免闪现），再从任务栏按钮处播放展开动画
+        self.setWindowOpacity(0.0)
+        self.showNormal()
+        self.setGeometry(start)
+        self.raise_()
+
+        anims = QParallelAnimationGroup(self)
+        geo = QPropertyAnimation(self, b"geometry")
+        geo.setDuration(240)
+        geo.setStartValue(start)
+        geo.setEndValue(target)
+        geo.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        op = QPropertyAnimation(self, b"windowOpacity")
+        op.setDuration(240)
+        op.setStartValue(0.0)
+        op.setEndValue(1.0)
+        op.setEasingCurve(QEasingCurve.Type.OutCubic)
+
+        anims.addAnimation(geo)
+        anims.addAnimation(op)
+        anims.finished.connect(self._finish_restore_from_minimized)
+        self._anims.append(anims)
+        anims.start()
+
+    def _finish_restore_from_minimized(self):
+        self.setWindowOpacity(1.0)
+        if self._minimized_from_max:
+            self.setGeometry(self._maximized_geo)
+            self.is_maximized = True
+        else:
+            self.setGeometry(self._normal_geometry)
+            self.is_maximized = False
+        self._minimized_from_max = False
 
     def _setup_ui(self):
         """设置UI - 无白框，内容自动填满"""
@@ -944,7 +1201,7 @@ class AppWindowFrame(QWidget):
         min_btn = QPushButton("─")
         min_btn.setStyleSheet(btn_style)
         min_btn.setFixedSize(36, 26)
-        min_btn.clicked.connect(self.showMinimized)
+        min_btn.clicked.connect(self.play_minimize_animation)
         title_layout.addWidget(min_btn)
 
         max_btn = QPushButton("□")
@@ -993,6 +1250,8 @@ class AppWindowFrame(QWidget):
 
     def _title_mouse_move(self, event):
         if self._drag_pos and event.buttons() & Qt.MouseButton.LeftButton:
+            if self.is_maximized:
+                return  # 最大化状态下不允许拖动
             self.move(event.globalPosition().toPoint() - self._drag_pos)
 
     def _title_mouse_release(self, event):
@@ -1002,6 +1261,8 @@ class AppWindowFrame(QWidget):
 
     def _get_resize_mode(self, pos) -> str | None:
         """根据鼠标位置判断调整方向"""
+        if self.is_maximized:
+            return None  # 最大化状态下不允许调整大小
         r = self.rect()
         margin = self.RESIZE_MARGIN
         x, y = pos.x(), pos.y()
@@ -1113,10 +1374,11 @@ class AppWindowFrame(QWidget):
         super().mouseReleaseEvent(event)
 
     def _toggle_maximize(self):
-        if self.isMaximized():
-            self.showNormal()
+        """切换最大化/还原（带平滑动画）"""
+        if self.is_maximized:
+            self.play_restore_animation()
         else:
-            self.showMaximized()
+            self.play_maximize_animation()
 
     def close_window(self):
         self.play_close_animation()
@@ -1603,14 +1865,14 @@ class DesktopEnvironment(QMainWindow):
             self._power_action("shutdown")
 
     def _toggle_window(self, window: AppWindow, btn: TaskbarButton):
-        """切换窗口显示状态"""
-        if window.widget.isVisible():
-            if window.widget.isMinimized():
-                window.widget.showNormal()
-            else:
-                window.widget.showMinimized()
+        """切换窗口显示状态（最小化/恢复，带平滑动画）"""
+        w = window.widget
+        if w.isVisible() and not w.isMinimized():
+            w.play_minimize_animation()
+        elif w.isMinimized():
+            w.play_restore_from_minimized_animation()
         else:
-            window.widget.show()
+            w.show()
 
     def showEvent(self, event):
         """窗口显示事件"""

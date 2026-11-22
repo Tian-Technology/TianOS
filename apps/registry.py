@@ -519,3 +519,28 @@ class Registry(QWidget):
     def closeEvent(self, event):
         self.store.save()
         super().closeEvent(event)
+
+
+# ---------------------------------------------------------------------------
+# 开机注册
+# 每次开机时把所有已安装应用自动写入注册表
+# 路径: HKEY_CURRENT_USER\Software\TianOS\Apps\<模块名>
+# 供注册表编辑器 / 应用管理器 / 右键菜单等系统组件读取。
+# ---------------------------------------------------------------------------
+
+APPS_REG_PATH = ["HKEY_CURRENT_USER", "Software", "TianOS", "Apps"]
+
+
+def register_all_apps_on_boot() -> int:
+    """开机注册：扫描所有已安装应用并写入 HKEY_CURRENT_USER\\Software\\TianOS\\Apps。
+    返回本次注册的应用数量。任何异常都不会阻塞系统启动。
+    """
+    try:
+        from apps import register_all_apps
+        count = register_all_apps(save=True)
+        print(f"[Registry] 应用注册完成: {count} 个应用 -> "
+              f"{chr(92).join(APPS_REG_PATH)}")
+        return count
+    except Exception as e:
+        print(f"[Registry] 开机应用注册失败(忽略): {e}")
+        return 0

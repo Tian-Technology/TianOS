@@ -304,6 +304,11 @@ class Settings(QWidget):
 
     # ---------- 控件工厂 ----------
 
+    def _apply(self, key: str, value):
+        """应用设置：更新内存配置并立刻写入本地 JSON 文件"""
+        sys_config.set(key, value, persist=False)
+        sys_config.save_to_disk()
+
     def _readonly_label(self, text: str) -> QLabel:
         lbl = QLabel(str(text) if text is not None else "-")
         lbl.setStyleSheet(f"color: {TEXT_SECONDARY}; font-size: 13px;")
@@ -313,7 +318,7 @@ class Settings(QWidget):
     def _make_toggle(self, key: str):
         value = bool(sys_config.get(key))
         sw = ToggleSwitch(value)
-        sw.toggled.connect(lambda checked, k=key: sys_config.set(k, checked))
+        sw.toggled.connect(lambda checked, k=key: self._apply(k, checked))
         return sw
 
     def _make_combo(self, key: str, choices):
@@ -335,7 +340,7 @@ class Settings(QWidget):
             }}
         """)
         cb.currentTextChanged.connect(
-            lambda text, k=key: sys_config.set(k, text))
+            lambda text, k=key: self._apply(k, text))
         return cb
 
     def _make_spin(self, key: str, low: int, high: int):
@@ -356,7 +361,7 @@ class Settings(QWidget):
                 background-color: #3a3a48; border: none; width: 16px;
             }}
         """)
-        sb.valueChanged.connect(lambda v, k=key: sys_config.set(k, v))
+        sb.valueChanged.connect(lambda v, k=key: self._apply(k, v))
         return sb
 
     def _make_slider(self, key: str, low: int = 0, high: int = 100):
@@ -386,7 +391,7 @@ class Settings(QWidget):
             lbl.setText(str(v))
 
         def on_release(k=key):
-            sys_config.set(k, slider.value())
+            self._apply(k, slider.value())
 
         slider.valueChanged.connect(on_change)
         slider.sliderReleased.connect(on_release)
@@ -407,7 +412,7 @@ class Settings(QWidget):
                 padding: 4px 8px; min-width: 140px;
             }}
         """)
-        line.returnPressed.connect(lambda k=key, w=line: sys_config.set(k, w.text()))
+        line.returnPressed.connect(lambda k=key, w=line: self._apply(k, w.text()))
         return line
 
     # ---------- 各分类渲染 ----------
@@ -477,11 +482,19 @@ class Settings(QWidget):
         start.add_row("启用动画", self._make_toggle("GUI.enable_animations"))
 
     def _page_apps(self):
-        self._info_card("应用", [
-            "已安装的应用程序列表",
-            "在此管理应用的启动、卸载和默认设置",
-            "应用数量会随安装情况动态变化",
-        ])
+        install = self._add_card("应用安装和更新")
+        install.add_row("允许从应用商店之外的来源安装应用",
+                        self._make_toggle("APPS.external_install"),
+                        "允许安装来自第三方来源的应用")
+        install.add_row("自动更新应用", self._make_toggle("APPS.auto_update"),
+                        "应用安装后可自动接收更新")
+        install.add_row("显示应用推荐", self._make_toggle("APPS.show_recommendations"))
+        install.add_row("显示应用通知", self._make_toggle("APPS.show_notifications"))
+
+        default = self._add_card("默认设置")
+        default.add_row("默认安装位置", self._make_text("APPS.default_install_location"))
+        default.add_row("在开始菜单显示最近添加的应用",
+                        self._make_toggle("APPS.show_recent_apps"))
 
     def _page_accounts(self):
         acc = self._add_card("账户信息")
@@ -510,37 +523,72 @@ class Settings(QWidget):
         clock_label.setText(_time.strftime("%Y-%m-%d  %H:%M:%S"))
 
     def _page_gaming(self):
-        self._info_card("游戏", [
-            "游戏模式：开启后系统会优先分配资源给游戏",
-            "Xbox Game Bar：按 Win+G 打开游戏栏",
-            "捕获：截图和录屏设置",
-            "图形设置：为特定应用指定 GPU",
-        ])
+        mode = self._add_card("游戏模式")
+        mode.add_row("游戏模式", self._make_toggle("GAMING.game_mode"),
+                     "开启后系统会优先分配 CPU/GPU 资源给正在运行的游戏")
+        mode.add_row("优先前台游戏帧数", self._make_toggle("GAMING.prioritize_foreground_fps"))
+        mode.add_row("HDR 游戏", self._make_toggle("GAMING.hdr"))
+
+        bar = self._add_card("游戏栏")
+        bar.add_row("Game Bar", self._make_toggle("GAMING.show_game_bar"),
+                    "按 Win+G 打开游戏栏，用于录屏和截图")
+
+        cap = self._add_card("捕获")
+        cap.add_row("后台录制", self._make_toggle("GAMING.capture_in_background"),
+                    "在游戏后台运行期间录制最后 30 秒画面")
 
     def _page_accessibility(self):
-        self._info_card("辅助功能", [
-            "视觉：放大镜、颜色滤镜、高对比度",
-            "听觉：单声道音频、可视化通知",
-            "交互：粘滞键、筛选键、切换键",
-            "语音：语音识别、讲述人",
-        ])
+        visual = self._add_card("视觉")
+        visual.add_row("放大镜", self._make_toggle("ACCESSIBILITY.magnifier"))
+        visual.add_row("颜色滤镜", self._make_combo(
+            "ACCESSIBILITY.color_filters",
+            ["无", "灰度", "反转", "红绿色盲", "蓝黄色盲"]))
+        visual.add_row("高对比度", self._make_toggle("ACCESSIBILITY.high_contrast"))
+        visual.add_row("文字大小 (%)", self._make_spin("ACCESSIBILITY.text_size", 80, 200))
+
+        hearing = self._add_card("听觉")
+        hearing.add_row("单声道音频", self._make_toggle("ACCESSIBILITY.mono_audio"))
+        hearing.add_row("可视化通知", self._make_toggle("ACCESSIBILITY.visual_notifications"))
+
+        interaction = self._add_card("交互")
+        interaction.add_row("粘滞键", self._make_toggle("ACCESSIBILITY.sticky_keys"))
 
     def _page_privacy(self):
-        self._info_card("隐私和安全性", [
-            "TianOS 安全中心：病毒和威胁防护",
-            "位置服务：控制应用的位置访问权限",
-            "摄像头：管理应用的摄像头访问",
-            "麦克风：管理应用的麦克风访问",
-            "诊断和反馈：遥测数据设置",
-        ])
+        sec = self._add_card("TianOS 安全中心")
+        sec.add_row("实时保护", self._make_toggle("PRIVACY.real_time_protection"),
+                    "实时扫描文件和进程中的病毒与威胁")
+        sec.add_row("云提交的样本", self._make_toggle("PRIVACY.cloud_sample_submission"),
+                    "将可疑文件样本提交给 TianOS 云端分析")
+
+        permission = self._add_card("应用权限")
+        permission.add_row("位置访问", self._make_toggle("PRIVACY.location"),
+                           "控制应用能否获取你的位置信息")
+        permission.add_row("摄像头访问", self._make_toggle("PRIVACY.camera"))
+        permission.add_row("麦克风访问", self._make_toggle("PRIVACY.microphone"))
+
+        diag = self._add_card("诊断和反馈")
+        diag.add_row("诊断数据", self._make_combo(
+            "PRIVACY.diagnostics",
+            ["仅必需诊断数据", "完整的诊断数据"]))
+        diag.add_row("广告 ID", self._make_toggle("PRIVACY.advertising_id"),
+                     "让应用跨平台个性化推荐（会重置 ID）")
+        diag.add_row("活动历史记录", self._make_toggle("PRIVACY.activity_history"))
 
     def _page_update(self):
-        self._info_card("TianOS 更新", [
-            f"当前版本: {sys_config.SYSTEM_VERSION}",
-            "系统已是最新版本",
-            "上次检查: 刚刚",
-            "高级选项：暂停更新、传递优化",
-        ])
+        upd = self._add_card("TianOS 更新")
+        upd.add_row("当前版本", self._readonly_label(sys_config.SYSTEM_VERSION))
+        upd.add_row("上次检查更新", self._readonly_label(
+            sys_config.get("UPDATE.last_check", "刚刚")))
+        upd.add_row("自动安装更新", self._make_toggle("UPDATE.auto_update"),
+                    "在有可用更新时自动下载并安装")
+        upd.add_row("包含驱动更新", self._make_toggle("UPDATE.include_drivers"))
+        upd.add_row("接收预览版本", self._make_toggle("UPDATE.preview_builds"),
+                    "提前体验即将发布的新功能")
+
+        adv = self._add_card("高级选项")
+        adv.add_row("传递优化", self._make_toggle("UPDATE.delivery_optimization"),
+                    "允许从其他 TianOS 设备下载更新，或向它们提供更新")
+        adv.add_row("下载带宽限制 (%)", self._make_slider("UPDATE.download_bandwidth", 30, 100))
 
     def _page_developer(self):
         dev = self._add_card("开发者选项")
