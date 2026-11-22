@@ -331,6 +331,14 @@ class Terminal(QWidget):
     def cmd_reboot(self, args: List[str]) -> str:
         """重启系统"""
         self._append_output("正在重启系统...", "#ff6644")
+
+        def _reboot():
+            try:
+                from boot.bsod import restart_tianos
+                restart_tianos()
+            except Exception:
+                sys.exit(0)
+        QTimer.singleShot(2000, _reboot)
         return ""
 
     def cmd_panic(self, args: List[str]) -> str:

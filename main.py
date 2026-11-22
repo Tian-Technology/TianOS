@@ -433,6 +433,7 @@ class TianOS:
         """运行GUI模式"""
         from PyQt6.QtWidgets import QApplication
         from PyQt6.QtCore import Qt as _Qt
+        from PyQt6.QtGui import QFont
         from gui.splash import BootSplashScreen
         from gui.desktop import DesktopEnvironment
 
@@ -442,6 +443,9 @@ class TianOS:
         # 创建QApplication
         self.app = QApplication(sys.argv)
         self.app.setStyle("Fusion")
+
+        # 全局指定备用字体，避免 Qt 回退解析 Fixedsys 等不可用字体
+        self.app.setFont(QFont("Microsoft YaHei", 9))
         
         # 设置应用样式
         self.app.setStyleSheet("""

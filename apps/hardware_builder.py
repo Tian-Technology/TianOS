@@ -6,17 +6,20 @@ TianOS 硬件配置器
 
 APP_NAME = "硬件配置器"
 APP_ICON = "🖥️"
-APP_ICON_FILE = "imageres 095.png"
+APP_ICON_FILE = "imageres 032.png"
 APP_COLOR = "#ff8800"
 
 import os
 import json
 import ast
+import re
+import time
+import shutil
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTreeWidget,
     QTreeWidgetItem, QListWidget, QListWidgetItem, QSplitter,
-    QTextEdit, QPushButton, QMessageBox
+    QTextEdit, QPushButton, QMessageBox, QFileDialog, QInputDialog
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont
@@ -119,6 +122,73 @@ def scan_hardware() -> dict:
     return result
 
 
+def infer_category(info: dict) -> str:
+    """根据 HARDWARE_INFO 的字段推断设备所属类别。
+
+    返回的类别必定在 CATEGORY_ORDER 中；无法识别时返回空字符串。
+    """
+    if not isinstance(info, dict):
+        return ""
+    # 用户可以在字典中显式声明类别（兼容中文外键字段）
+    explicit = str(info.get("category", "")).strip().lower()
+    if explicit in CATEGORY_ORDER:
+        return explicit
+
+    keys = {str(k).lower() for k in info.keys()}
+    if keys & {"chipset", "form_factor", "memory_types", "max_memory_mb"}:
+        return "motherboard"
+    if keys & {"vram_mb", "cuda_cores", "memory_clock_mhz", "core_clock_mhz"}:
+        return "gpu"
+    if keys & {"socket", "cores", "threads", "frequency_mhz", "tdp_w"}:
+        # 内存也有可能带 frequency_mhz，但主板/GPU 分支已先过滤，兜底用 total_mb 排除内存
+        if "total_mb" in keys and not ("cores" in keys or "socket" in keys):
+            return "memory"
+        return "cpu"
+    if keys & {"total_mb", "memory_type", "modules", "voltage_v"}:
+        return "memory"
+    return ""
+
+
+def import_hardware_file(file_path: str, category: str) -> str:
+    """把外部硬件配置 .py 文件导入到 hardware/<category>/ 目录。
+
+    返回导入后的设备 id（不含 .py 后缀）；失败时抛出异常。
+    若同 id 的设备已存在，会将旧文件自动备份为 <id>_backup_<时间戳>.py。
+    """
+    if not os.path.isfile(file_path):
+        raise FileNotFoundError(f"文件不存在: {file_path}")
+
+    info = _load_hardware_info(file_path)
+    if not info:
+        raise ValueError("文件中未找到合法的 HARDWARE_INFO 字典")
+
+    if category not in CATEGORY_ORDER:
+        category = infer_category(info)
+    if category not in CATEGORY_ORDER:
+        raise ValueError("无法识别设备类别，请在导入时手动指定")
+
+    base = os.path.splitext(os.path.basename(file_path))[0]
+    if not base or not re.match(r"^[A-Za-z0-9_\-]+$", base):
+        base = str(info.get("name") or info.get("model") or "hw_device")
+        base = re.sub(r"[^\w\-]+", "_", base).strip("_") or "hw_device"
+
+    target_dir = os.path.join(HARDWARE_DIR, category)
+    os.makedirs(target_dir, exist_ok=True)
+    target_file = os.path.join(target_dir, f"{base}.py")
+
+    # 若已存在，先备份原文件，再写入新配置
+    if os.path.isfile(target_file):
+        backup_file = os.path.join(
+            target_dir, f"{base}_backup_{time.strftime('%Y%m%d_%H%M%S')}.py")
+        shutil.copy2(target_file, backup_file)
+
+    with open(file_path, "r", encoding="utf-8") as fsrc:
+        content = fsrc.read()
+    with open(target_file, "w", encoding="utf-8") as fdst:
+        fdst.write(content)
+    return base
+
+
 def load_active_config() -> dict:
     """读取 data/active_hardware.json；不存在或损坏时返回空 dict。"""
     if not os.path.isfile(ACTIVE_HARDWARE_FILE):
@@ -198,7 +268,9 @@ class HardwareBuilder(QWidget):
         layout.addWidget(title)
 
         tip = QLabel("在左侧双击硬件即可加入中间配置；右侧显示所选硬件详情。"
-                     "点击“应用配置”写入 data/active_hardware.json。")
+                     "点击“应用配置”写入 data/active_hardware.json，"
+                     "修改后需重启 TianOS 才能生效。\n"
+                     "如需导入自定义硬件，可点击下方“导入硬件配置 (.py)”。")
         tip.setStyleSheet("color: #556677; font-size: 11px;")
         layout.addWidget(tip)
 
@@ -265,12 +337,14 @@ class HardwareBuilder(QWidget):
         bar.addWidget(self.status, 1)
 
         self.btn_save = self._btn("应用配置")
+        self.btn_import = self._btn("导入硬件配置 (.py)")
         self.btn_refresh = self._btn("刷新")
-        for b in (self.btn_save, self.btn_refresh):
+        for b in (self.btn_save, self.btn_import, self.btn_refresh):
             bar.addWidget(b)
         layout.addLayout(bar)
 
         self.btn_save.clicked.connect(self._on_save)
+        self.btn_import.clicked.connect(self._on_import)
         self.btn_refresh.clicked.connect(self.refresh)
 
     @staticmethod
@@ -315,6 +389,72 @@ class HardwareBuilder(QWidget):
         total = sum(len(v) for v in self._devices.values())
         self.status.setText(f"已扫描到 {total} 个硬件设备" if self._devices
                             else "未在 hardware/ 目录中发现硬件")
+
+    # ---------- 导入 ----------
+
+    def _on_import(self):
+        """导入外部硬件配置 .py 文件到 hardware/ 目录。"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "选择硬件配置文件", ROOT_DIR,
+            "Python 硬件配置文件 (*.py);;所有文件 (*)")
+        if not file_path:
+            return
+
+        info = _load_hardware_info(file_path)
+        if not info:
+            QMessageBox.warning(
+                self, "导入失败",
+                "所选文件中未找到合法的 HARDWARE_INFO 字典。\n"
+                "请确认文件内容形如: HARDWARE_INFO = { \"name\": ..., ... }")
+            return
+
+        # 确定目标类别：优先字典声明的类别，否则按字段推断，仍失败则让用户选择
+        category = str(info.get("category", "")).strip().lower()
+        if category not in CATEGORY_ORDER:
+            category = infer_category(info)
+        if category not in CATEGORY_ORDER:
+            labels = [CATEGORY_LABELS[c] for c in CATEGORY_ORDER]
+            label, ok = QInputDialog.getItem(
+                self, "选择硬件类别",
+                "无法自动识别该配置的硬件类别，请手动选择:",
+                labels, 0, False)
+            if not ok or not label:
+                return
+            category = CATEGORY_ORDER[labels.index(label)]
+
+        name = str(info.get("name") or info.get("model") or info.get("id") or "未知硬件")
+        if QMessageBox.question(
+                self, "确认导入",
+                f"将导入以下硬件配置:\n\n"
+                f"  类别: {CATEGORY_LABELS[category]}\n"
+                f"  名称: {name}\n"
+                f"  文件: {os.path.basename(file_path)}\n\n"
+                f"导入后文件将复制到:\n"
+                f"  hardware/{category}/ 目录\n"
+                f"可在“应用配置”中选择使用，重启后生效。\n\n"
+                f"是否继续?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) \
+                != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            device_id = import_hardware_file(file_path, category)
+        except Exception as e:
+            QMessageBox.critical(self, "导入失败", f"导入过程中发生错误:\n{e}")
+            return
+
+        self.refresh()
+
+        # 自动选中刚导入的硬件，方便用户直接应用
+        self._selection[category] = device_id
+        self._update_list()
+        self.status.setText(f"已导入并选中 {CATEGORY_LABELS[category]}: {name}")
+
+        QMessageBox.information(
+            self, "导入成功",
+            f"已成功导入 {CATEGORY_LABELS[category]}: {name}\n\n"
+            f"文件位置: hardware/{category}/{device_id}.py\n\n"
+            f"该硬件已自动加入配置。点击“应用配置”保存，重启 TianOS 后生效。")
 
     # ---------- 交互 ----------
 
@@ -392,17 +532,12 @@ class HardwareBuilder(QWidget):
             return
 
         if save_active_config(selection):
-            # 刷新全局硬件管理器缓存，让任务管理器/关于界面/沙箱立即使用新配置
-            try:
-                from system.hardware_manager import hardware_manager
-                hardware_manager.reload()
-            except Exception:
-                pass
             QMessageBox.information(
                 self, "配置已保存",
-                "配置已保存，重启 TianOS 后完全生效。\n"
-                "当前会话硬件信息已即时同步到任务管理器与关于界面。")
-            self.status.setText("配置已保存，重启生效")
+                "配置已保存到 data/active_hardware.json。\n\n"
+                "⚠ 修改后的硬件信息必须重启 TianOS 才能应用。\n"
+                "请关闭并重新启动系统使新硬件配置生效。")
+            self.status.setText("配置已保存，请重启 TianOS 后生效")
         else:
             QMessageBox.critical(self, "保存失败",
                                  f"无法写入 {ACTIVE_HARDWARE_FILE}")

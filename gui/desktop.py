@@ -1917,10 +1917,19 @@ class DesktopEnvironment(QMainWindow):
                                     lambda: sys.exit(0))
         elif action == "reboot":
             self._show_power_dialog("重启", "🔄 系统将在 3 秒后重启...", "#ff9900",
-                                    lambda: [self.close(), QApplication.quit()])
+                                    lambda: self._do_reboot())
         elif action == "sleep":
             self._show_power_dialog("睡眠", "💤 系统已进入睡眠状态\n点击任意位置唤醒", "#00ccff",
                                     lambda: None)
+
+    def _do_reboot(self):
+        """执行系统重启：启动新进程并退出当前进程"""
+        try:
+            from boot.bsod import restart_tianos
+            self.close()
+            restart_tianos()
+        except Exception:
+            QApplication.quit()
 
     def _show_power_dialog(self, title: str, message: str, color: str, callback):
         """显示电源操作对话框（非阻塞）"""

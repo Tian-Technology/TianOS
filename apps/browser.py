@@ -29,6 +29,10 @@ CHROME_USER_AGENT = (
 HOME_URL = "tian://home"
 PLAYER_URL = "tian://player"
 
+# 字体替换：QtWebEngine / Qt 渲染会尝试解析 Fixedsys 等
+# 系统中不存在的字体导致 DirectWrite 警告，统一替换为微软雅黑
+QFont.insertSubstitution("Fixedsys", "Microsoft YaHei")
+
 
 def _build_home_html() -> str:
     return """
@@ -117,6 +121,9 @@ class Browser(QWidget):
         super().__init__(parent)
         self.setWindowTitle("Tian浏览器")
         self.setMinimumSize(860, 600)
+
+        # 强制浏览器窗口使用系统存在的微软雅黑字体，避免回退解析 Fixedsys
+        self.setFont(QFont("Microsoft YaHei", 9))
 
         # QtWebEngine 需要合法的应用名，否则可能警告
         if not QCoreApplication.applicationName():
@@ -224,9 +231,20 @@ class Browser(QWidget):
         # 持久化存储目录，保证 Cookie/缓存生效
         self._profile.setPersistentCookiesPolicy(
             QWebEngineProfile.PersistentCookiesPolicy.AllowPersistentCookies)
-        page = _BrowserPage(self._profile, self.view)
-        self.view.setPage(page)
+        self._page = _BrowserPage(self._profile, self.view)
+        self.view.setPage(self._page)
         settings = self.view.settings()
+        # 显式指定 WebEngine 渲染引擎的各字体族为系统存在的微软雅黑，
+        # 避免 Chromium 内部字体解析回退到不存在的 Fixedsys 而产生警告
+        for _family in (
+            QWebEngineSettings.FontFamily.StandardFont,
+            QWebEngineSettings.FontFamily.FixedFont,
+            QWebEngineSettings.FontFamily.SerifFont,
+            QWebEngineSettings.FontFamily.SansSerifFont,
+            QWebEngineSettings.FontFamily.CursiveFont,
+            QWebEngineSettings.FontFamily.FantasyFont,
+        ):
+            settings.setFontFamily(_family, "Microsoft YaHei")
         settings.setAttribute(QWebEngineSettings.WebAttribute.JavascriptEnabled, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.LocalStorageEnabled, True)
         settings.setAttribute(QWebEngineSettings.WebAttribute.PluginsEnabled, True)
@@ -260,6 +278,65 @@ class Browser(QWidget):
         """)
         layout.addWidget(self.status)
         self.status.showMessage("就绪")
+
+    # ---------- 窗口关闭 ----------
+
+    def closeEvent(self, event):
+        """重写关闭事件：彻底释放 QtWebEngine / Chromium 底层资源，
+        避免 'Release of profile requested but WebEnginePage still not deleted' 内存泄漏告警。
+
+        释放顺序（必须按此顺序）:
+        1. 先删除 WebEnginePage（页面）
+        2. 再删除 QWebEngineView（视图）
+        3. 最后删除 QWebEngineProfile（网络 profile）
+        """
+        # 断开所有 engine 信号，防止关闭过程中再次触发回调
+        for _sig in (
+            self.view.urlChanged, self.view.titleChanged,
+            self.view.loadStarted, self.view.loadProgress, self.view.loadFinished,
+        ):
+            try:
+                _sig.disconnect()
+            except Exception:
+                pass
+
+        try:
+            self.view.stop()
+        except Exception:
+            pass
+
+        # 1. 先释放 WebEnginePage：
+        #    解除与 view 的父子关系后独立删除，确保其先于 profile 被销毁
+        try:
+            self._page.setParent(None)
+            self._page.deleteLater()
+        except Exception:
+            pass
+        #    解除 view 对 page 的持有
+        try:
+            self.view.setPage(None)
+        except Exception:
+            pass
+
+        # 2. 释放 QWebEngineView（解除与 profile 的父子关系，避免连带销毁顺序错乱）
+        try:
+            self.view.setParent(None)
+            self.view.deleteLater()
+        except Exception:
+            pass
+
+        # 3. 释放 QWebEngineProfile（必须为最后释放的 WebEngine 对象）
+        try:
+            self._profile.setParent(None)
+            self._profile.deleteLater()
+        except Exception:
+            pass
+
+        self._page = None
+        self.view = None
+        self._profile = None
+
+        super().closeEvent(event)
 
     # ---------- 导航 ----------
 

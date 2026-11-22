@@ -467,20 +467,40 @@ class BlueScreenWidget:
 
 
 def restart_tianos():
-    """重新启动 TianOS 系统（通过新的进程重新执行 main.py）"""
-    from PyQt6.QtWidgets import QApplication
-    app = QApplication.instance()
-    if app is not None:
-        app.quit()
+    """重新启动 TianOS 系统（启动新的 Python 进程执行 main.py）。
 
-    print("\n[BSOD] 正在重新启动 TianOS...")
+    通过 subprocess.Popen 先启动新进程，再退出当前进程，
+    避免 os.execv 在 Windows 下不可靠、子进程无法接管的问题。
+    """
+    import subprocess
+
+    print("\n[重启] 正在重新启动 TianOS...")
     main_module = os.path.normpath(os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "main.py"))
+    # 保留原始命令行参数，使重启后与当前会话使用相同启动选项
+    cmd = [sys.executable, main_module] + list(sys.argv[1:])
     try:
-        os.execv(sys.executable, [sys.executable, main_module])
+        # Windows 下为子进程创建独立控制台窗口，避免随父进程一同关闭
+        flags = subprocess.CREATE_NEW_CONSOLE if os.name == "nt" else 0
+        proc = subprocess.Popen(
+            cmd,
+            cwd=os.path.dirname(main_module),
+            creationflags=flags,
+        )
+        print(f"[重启] 新进程已启动 PID={proc.pid}")
     except Exception as e:
-        print(f"[BSOD] 重新启动失败: {e}")
+        print(f"[重启] 重新启动失败: {e}")
         sys.exit(1)
+
+    # 退出当前进程，让位于新的 TianOS 进程
+    try:
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+    except Exception:
+        pass
+    os._exit(0)
 
 
 def handle_crash(error: Exception, phase: str = "", text_mode: bool = False,

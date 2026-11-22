@@ -429,7 +429,43 @@ class HardwareTab(QWidget):
         self._setup_ui()
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
+
+        # 内容区域放入滚动容器，防止内容超出窗口显示不全
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("""
+            QScrollArea {
+                background-color: transparent;
+                border: none;
+            }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 10px;
+                margin: 2px;
+                border: none;
+            }
+            QScrollBar::handle:vertical {
+                background: #2a2a4a;
+                border-radius: 4px;
+                min-height: 30px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #3a3a6a;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                height: 0;
+            }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: transparent;
+            }
+        """)
+        content = QWidget()
+        content.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(15, 15, 15, 15)
         layout.setSpacing(12)
 
@@ -573,6 +609,10 @@ class HardwareTab(QWidget):
 
         layout.addWidget(net_frame)
         layout.addStretch()
+
+        # 内容放入滚动容器
+        scroll.setWidget(content)
+        outer_layout.addWidget(scroll, 1)
 
 
 class TaskManager(QWidget):
