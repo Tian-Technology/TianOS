@@ -285,7 +285,10 @@ class BootSplashScreen(QMainWindow):
         self._fade_anim.start()
 
     def _skip_to_desktop(self):
-        """跳过淡出动画（含延时期），直接进入桌面"""
+        """跳过淡出动画（含延时期），直接进入桌面;
+        先发 fade_started 让外部把桌面放到下层 (幂等, 重复触发安全),
+        再收尾展示, 避免跳跃时下层还没有任何窗口而暴露宿主机。
+        """
         if self._completed:
             return
         self._completed = True
@@ -294,6 +297,7 @@ class BootSplashScreen(QMainWindow):
             self._fade_delay_timer.stop()
         if self._fade_anim is not None:
             self._fade_anim.stop()
+        self.fade_started.emit()
         self.boot_complete.emit()
 
     def keyPressEvent(self, event):

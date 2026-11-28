@@ -247,6 +247,13 @@ class HardwareBuilder(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._permission_denied = False
+        # 管理员权限拦截: 仅 admin 角色可打开硬件配置器
+        from system.user_manager import user_manager
+        if not user_manager.is_current_admin():
+            self._permission_denied = True
+            QMessageBox.warning(self, "权限不足", "权限不足：需要管理员权限")
+            return
         self.setWindowTitle("硬件配置器")
         self.setMinimumSize(860, 520)
         self._devices: dict = {}

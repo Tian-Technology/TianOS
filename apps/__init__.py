@@ -210,9 +210,14 @@ class AppRegistry:
                     print(f"[APPS] 蓝屏处理失败: {bsod_err}")
                 return None
             try:
-                return app_info.widget_class()
+                widget = app_info.widget_class()
             except Exception as e:
                 print(f"[APPS] 启动 '{name}' 失败: {e}")
+                return None
+            # 权限等校验未通过: __init__ 内已弹窗提示并被标记为拒绝加载, 不创建窗口
+            if getattr(widget, "_permission_denied", False):
+                return None
+            return widget
         return None
     
     def launch_by_name(self, display_name: str) -> Optional[QWidget]:

@@ -272,6 +272,11 @@ class TianOS:
         self.boot_phase = "gui"
         self.log("桌面环境加载...")
         
+        # 登录流程前置: 在开机动画结束与桌面显示之间, 必须先验证用户身份
+        from system.user_manager import user_manager
+        self.user_manager = user_manager
+        self.log(f"用户管理器就绪: {len(self.user_manager.get_users())} 个账户 (等待登录验证)")
+
         self.boot_progress = 85
         if callback:
             callback("GUI", 85, "窗口管理器启动")
@@ -389,22 +394,17 @@ class TianOS:
     def _register_force_quit_shortcut(self):
         """
         注册全局强制退出快捷键 Ctrl+Shift+F1
-        在任何界面按下均可强制关闭程序
+        仅绑定到 QApplication: 窗口对象 (Splash/Desktop/Login) 会被创建/销毁,
+        绑定到它们上会在窗口销毁后访问已销毁对象, 导致段错误等崩溃
         """
-        from PyQt6.QtGui import QShortcut, QKeySequence, QAction
+        from PyQt6.QtGui import QShortcut, QKeySequence
         from PyQt6.QtCore import Qt
         
-        # 方案1: QShortcut 绑定到 QApplication (全局生效)
         shortcut = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Modifier.SHIFT | Qt.Key.Key_F1), self.app)
+        # 必须设为 ApplicationShortcut: 默认 WindowShortcut 只在"当前活动窗口"
+        # 上生效, 即使 parent 是 QApplication 也不会触发 (快捷键失效的根因)
+        shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
         shortcut.activated.connect(self._force_quit)
-        
-        # 方案2: 绑定到开机画面
-        shortcut2 = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Modifier.SHIFT | Qt.Key.Key_F1), self.splash_screen)
-        shortcut2.activated.connect(self._force_quit)
-        
-        # 方案3: 绑定到桌面窗口
-        shortcut3 = QShortcut(QKeySequence(Qt.Modifier.CTRL | Qt.Modifier.SHIFT | Qt.Key.Key_F1), self.desktop)
-        shortcut3.activated.connect(self._force_quit)
         
         self.log("全局强制退出快捷键已注册: Ctrl+Shift+F1", "INFO")
 
@@ -435,7 +435,6 @@ class TianOS:
         from PyQt6.QtCore import Qt as _Qt
         from PyQt6.QtGui import QFont
         from gui.splash import BootSplashScreen
-        from gui.desktop import DesktopEnvironment
 
         # QtWebEngine (Chromium) 要求：必须在创建 QApplication 之前启用共享 OpenGL 上下文
         QApplication.setAttribute(_Qt.ApplicationAttribute.AA_ShareOpenGLContexts, True)
@@ -462,32 +461,98 @@ class TianOS:
         if self.args.quick:
             self.splash_screen.skip_animation()
         
-        # 桌面
-        self.desktop = DesktopEnvironment()
+        # 桌面: 延迟到登录成功后才创建 (open_desktop_after_login 内实例化)
+        # 登录窗口: Splash 淡出时弹出, 用于验证用户身份
+        self.desktop = None
+        self.login_window = None
         
-        # 连接信号: 开机完成 → 显示桌面
+        # 信号职责划分:
+        #   - Splash 的 fade_started / boot_complete 只负责 LoginWindow 的显示与销毁;
+        #   - 桌面环境的创建完全由 LoginWindow 的 login_succeeded 信号触发。
+        # (登录流程插入在开机动画结束与桌面上屏之间)
         if self.args.quick:
             BOOT_TOTAL_TIME = 0.0
         else:
             BOOT_TOTAL_TIME = sys_config.get("BOOT.splash_time_s", 1.2)
         boot_start_time = time.time()
 
-        def show_desktop_under():
-            # 淡出开始：先把桌面放到开机画面下层（作为被淡出揭示的内容），
-            # 这样淡出露出的是桌面而不是宿主机界面
+        def open_desktop_after_login(user_info: dict):
+            """登录成功: 延迟创建并显示桌面 (已存在则复用, 防止重复创建)"""
+            from gui.desktop import DesktopEnvironment
+            if self.desktop is None:
+                self.desktop = DesktopEnvironment()
+            username = (user_info or {}).get("username", "?")
+            role = (user_info or {}).get("role", "?")
+            self.log(f"用户 '{username}' 登录成功 (角色: {role})", "INFO")
             self.desktop.show()
-
-        def raise_desktop():
-            # 淡出结束：置顶桌面并关闭开机画面
             self.desktop.raise_()
             self.desktop.activateWindow()
+            # 登录窗口已完成使命, 安全关闭
+            if self.login_window is not None:
+                self.login_window.close()
+
+        def auto_login_no_password() -> dict:
+            """无密码模式: 自动登录默认 admin (找不到则取第一个用户)"""
+            from system.user_manager import user_manager
+            admin = user_manager.get_user("admin")
+            if admin is None:
+                users = user_manager.get_users()
+                admin = users[0] if users else None
+            if admin is not None:
+                user_manager.set_current_user(admin)
+                self.log(f"未配置登录密码, 自动登录 '{admin.get('username')}'", "INFO")
+            return dict(admin) if admin is not None else {}
+
+        def prepare_desktop_below_splash():
+            """无密码模式: 把 TianOS 桌面预创建并置于 Splash 下层。
+            这样 Splash 淡出动画逐渐透明时, 显露出来的是 TianOS 桌面而不是宿主,
+            实现无缝衔接、彻底消除"看到宿主机"的间隙。
+            """
+            from gui.desktop import DesktopEnvironment
+            info = auto_login_no_password()
+            if not info:
+                return
+            if self.desktop is None:
+                self.desktop = DesktopEnvironment()
+            self.desktop.show()
+            # 桌面不抢占焦点 (Splash 带 WindowStaysOnTopHint, 仍保持最上层)
+            self.splash_screen.raise_()
+
+        def show_login_at_fade():
+            """Splash 开始淡出:
+            - 已设置密码 -> 登录窗口置入 Splash 下层
+            - 未设置密码 -> 预创建桌面置入 Splash 下层, 淡出时无缝闪现
+            """
+            from system.user_manager import user_manager
+            if not user_manager.any_password_set():
+                prepare_desktop_below_splash()
+                return
+            from gui.login import LoginWindow
+            if self.login_window is None:
+                self.login_window = LoginWindow()
+                self.login_window.login_succeeded.connect(open_desktop_after_login)
+            self.login_window.show()
+
+        def show_login_final():
+            """Splash 淡出完成:
+            - 已设置密码 -> 置顶 LoginWindow 等待用户登录
+            - 未设置密码 -> 桌面已预置下层, 直接置顶进入系统
+            """
+            from system.user_manager import user_manager
+            if self.login_window is not None:
+                self.login_window.raise_()
+                self.login_window.activateWindow()
+            elif self.desktop is not None:
+                # 桌面已在淡出前预创建, 淡出完毕直接提升到最上层
+                self.desktop.raise_()
+                self.desktop.activateWindow()
+                current = user_manager.get_current_user() or {}
+                self.log(f"用户 '{current.get('username', '?')}' 已进入系统", "INFO")
             self.splash_screen.close()
 
-        def on_boot_complete():
-            raise_desktop()
-
-        self.splash_screen.fade_started.connect(show_desktop_under)
-        self.splash_screen.boot_complete.connect(on_boot_complete)
+        # Splash 信号: 只管 LoginWindow 的显示与销毁, 不负责创建桌面
+        self.splash_screen.fade_started.connect(show_login_at_fade)
+        self.splash_screen.boot_complete.connect(show_login_final)
         
         # 启动线程执行引导
         def boot_thread():
@@ -511,7 +576,7 @@ class TianOS:
         # 启动线程
         threading.Thread(target=boot_thread, daemon=True).start()
         
-        # 注册全局强制退出快捷键 (Ctrl+Shift+F1)
+        # 注册全局强制退出快捷键 (Ctrl+Shift+F1, 仅绑定 QApplication)
         self._register_force_quit_shortcut()
         
         # 进入事件循环

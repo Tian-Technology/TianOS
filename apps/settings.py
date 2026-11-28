@@ -415,6 +415,41 @@ class Settings(QWidget):
         line.returnPressed.connect(lambda k=key, w=line: self._apply(k, w.text()))
         return line
 
+    def _make_password_input(self, placeholder: str = ""):
+        """密码输入框 (黑点遮罩, 与设置页深色风格一致)"""
+        edit = QLineEdit()
+        edit.setPlaceholderText(placeholder)
+        edit.setEchoMode(QLineEdit.EchoMode.Password)
+        edit.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: #333340; color: {TEXT_PRIMARY};
+                border: 1px solid {CARD_BORDER}; border-radius: 4px;
+                padding: 4px 8px; min-width: 140px;
+            }}
+            QLineEdit:focus {{ border: 1px solid {ACCENT}; }}
+        """)
+        return edit
+
+    def _save_login_password(self, pwd_edit, pwd_conf):
+        """保存当前账户的登录密码 (两次输入需一致; 留空 = 清除密码)"""
+        from system.user_manager import user_manager
+        current = user_manager.get_current_user()
+        if current is None:
+            self._pwd_hint.setText("未检测到当前登录账户")
+            return
+        p1 = pwd_edit.text()
+        p2 = pwd_conf.text()
+        if p1 != p2:
+            self._pwd_hint.setText("两次输入的密码不一致")
+            return
+        username = current.get("username")
+        user_manager.update_user(username, password=p1)
+        self._pwd_hint.setText("✅ 密码已保存")
+        if user_manager.any_password_set():
+            self._login_status_label.setText("已设置，下次开机会弹出登录界面")
+        else:
+            self._login_status_label.setText("未设置，下次开机无需登录直接进入桌面")
+
     # ---------- 各分类渲染 ----------
 
     def _render_category(self, cat_id: str):
@@ -497,11 +532,49 @@ class Settings(QWidget):
                         self._make_toggle("APPS.show_recent_apps"))
 
     def _page_accounts(self):
+        from system.user_manager import user_manager
+        current = user_manager.get_current_user()
+        username = current.get("username", "-") if current else "-"
+        role = current.get("role", "-") if current else "-"
+        role_text = {"admin": "管理员", "standard": "标准用户"}.get(role, role)
+
         acc = self._add_card("账户信息")
-        acc.add_row("用户名", self._readonly_label(sys_config.get("ACCOUNTS.username")))
+        acc.add_row("当前用户", self._readonly_label(username))
+        acc.add_row("角色", self._readonly_label(role_text))
         acc.add_row("显示名称", self._make_text("ACCOUNTS.display_name"))
-        acc.add_row("账户类型", self._readonly_label(sys_config.get("ACCOUNTS.account_type")))
         acc.add_row("主目录", self._readonly_label(sys_config.get("ACCOUNTS.home_dir")))
+
+        # ---- 登录密码 (设置后才能启用登录界面) ----
+        pwd = self._add_card("登录密码")
+        if user_manager.any_password_set():
+            self._login_status_label = self._readonly_label("已设置，下次开机会弹出登录界面")
+        else:
+            self._login_status_label = self._readonly_label("未设置，下次开机无需登录直接进入桌面")
+        pwd.add_row("登录状态", self._login_status_label)
+
+        pwd_edit = self._make_password_input("新密码")
+        pwd_conf = self._make_password_input("确认新密码")
+        pwd.add_row("新密码", pwd_edit, "留空并保存可清除当前账户的登录密码")
+        pwd.add_row("确认新密码", pwd_conf)
+
+        save_btn = QPushButton("保存密码")
+        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        save_btn.setFixedSize(110, 32)
+        save_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {ACCENT}; color: #0c0c12;
+                border: none; border-radius: 6px; font-weight: 600;
+            }}
+            QPushButton:hover {{ background-color: #33d6ff; }}
+        """)
+        self._pwd_hint = QLabel("")
+        self._pwd_hint.setStyleSheet(f"color: {TEXT_TERTIARY}; font-size: 11px;")
+        hint_row = QHBoxLayout()
+        hint_row.addWidget(self._pwd_hint, 1)
+        hint_row.addWidget(save_btn, 0)
+        pwd._layout.addLayout(hint_row)
+        save_btn.clicked.connect(
+            lambda: self._save_login_password(pwd_edit, pwd_conf))
 
     def _page_time(self):
         card = self._add_card("日期和时间")
